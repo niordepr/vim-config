@@ -1,0 +1,23 @@
+services:
+  web:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    environment:
+      - APP_ENV=production
+
+  api:
+    image: myapp/api:v1
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+    deploy:
+      replicas: 3
+    command: ["python", "app.py"]
+
+  worker:
+    image: myapp/worker:v1
+    environment:
+      - QUEUE_URL=redis://redis:6379

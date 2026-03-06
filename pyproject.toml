@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dock2k8s"
+version = "0.1.0"
+description = "Convert Docker Compose projects to Kubernetes manifests and deploy to K8S clusters"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.scripts]
+dock2k8s = "dock2k8s.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["dock2k8s*"]
