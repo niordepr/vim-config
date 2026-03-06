@@ -1,7 +1,7 @@
 # vim-config
 
-我的 Neovim 配置
+My Neovim configuration
 
-## 许可证
+## License
 
 MIT
