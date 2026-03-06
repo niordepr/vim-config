@@ -28,7 +28,6 @@ from .topology import TopologyManager
 
 logger = logging.getLogger(__name__)
 
-_CONTROLLER_PORT = 8080
 _HEALTH_PORT = 8081
 
 

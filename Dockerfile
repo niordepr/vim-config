@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir .
 
 EXPOSE 8081
 
-CMD ["python", "-m", "satellite_sdn.controller"]
+CMD ["python", "-m", "satellite_sdn"]
