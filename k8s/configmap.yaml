@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: satellite-sdn-config
+  labels:
+    app: satellite-sdn-controller
+data:
+  HEARTBEAT_TIMEOUT_S: "30"
+  LOAD_THRESHOLD: "0.8"
+  RECONCILE_INTERVAL_S: "10"
