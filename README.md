@@ -1,5 +1,7 @@
 # Satellite Broadcast Distribution SDN Controller
 
+English | [中文](README.zh-CN.md)
+
 An SDN controller for LEO (Low Earth Orbit) satellite broadcast distribution systems with dynamic resource scheduling, designed for Kubernetes deployment.
 
 ## Features
