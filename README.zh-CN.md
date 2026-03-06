@@ -166,7 +166,13 @@ ctrl = SDNController(
 )
 ```
 
-部署到 Kubernetes 时，通过 `k8s/configmap.yaml` 中的 ConfigMap 进行配置。
+也可以通过环境变量进行配置（适用于独立运行和 Kubernetes 部署）：
+
+```bash
+HEARTBEAT_TIMEOUT_S=60 LOAD_THRESHOLD=0.9 RECONCILE_INTERVAL_S=5 python -m satellite_sdn
+```
+
+部署到 Kubernetes 时，通过 `k8s/configmap.yaml` 中的 ConfigMap 进行配置，环境变量会自动注入到容器中。
 
 ## 运行测试
 

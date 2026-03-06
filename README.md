@@ -166,7 +166,13 @@ ctrl = SDNController(
 )
 ```
 
-When deployed to Kubernetes, they are configured via the ConfigMap in `k8s/configmap.yaml`.
+They can also be set via environment variables (used by the standalone entry point and Kubernetes deployments):
+
+```bash
+HEARTBEAT_TIMEOUT_S=60 LOAD_THRESHOLD=0.9 RECONCILE_INTERVAL_S=5 python -m satellite_sdn
+```
+
+When deployed to Kubernetes, they are configured via the ConfigMap in `k8s/configmap.yaml`, which injects the values as environment variables into the container.
 
 ## Running Tests
 

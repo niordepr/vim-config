@@ -184,3 +184,34 @@ class TestHealthServer:
             assert status == 404
         finally:
             self._stop_server()
+
+
+class TestMainEnvConfig:
+    """Tests for environment variable configuration in __main__."""
+
+    def test_env_vars_applied(self, monkeypatch):
+        monkeypatch.setenv("HEARTBEAT_TIMEOUT_S", "60")
+        monkeypatch.setenv("LOAD_THRESHOLD", "0.9")
+        monkeypatch.setenv("RECONCILE_INTERVAL_S", "5")
+
+        from satellite_sdn.__main__ import _controller_kwargs_from_env
+
+        kwargs = _controller_kwargs_from_env()
+        ctrl = SDNController(**kwargs)
+        assert ctrl._topology._heartbeat_timeout_s == 60.0
+        assert ctrl._scheduler._load_threshold == 0.9
+        assert ctrl._reconcile_interval == 5.0
+
+    def test_defaults_without_env_vars(self, monkeypatch):
+        monkeypatch.delenv("HEARTBEAT_TIMEOUT_S", raising=False)
+        monkeypatch.delenv("LOAD_THRESHOLD", raising=False)
+        monkeypatch.delenv("RECONCILE_INTERVAL_S", raising=False)
+
+        from satellite_sdn.__main__ import _controller_kwargs_from_env
+
+        kwargs = _controller_kwargs_from_env()
+        assert kwargs == {}
+        ctrl = SDNController(**kwargs)
+        assert ctrl._topology._heartbeat_timeout_s == 30.0
+        assert ctrl._scheduler._load_threshold == 0.8
+        assert ctrl._reconcile_interval == 10.0
