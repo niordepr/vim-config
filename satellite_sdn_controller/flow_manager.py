@@ -59,12 +59,19 @@ class FlowManager:
         self,
         session: BroadcastSession,
         tree_links: List[Link],
+        priority: int = 200,
     ) -> List[FlowRule]:
         """Install flow rules to realise a broadcast distribution tree.
 
         For each node in the tree that has outgoing links in *tree_links*, a
         REPLICATE flow rule is installed directing matched traffic to all
         downstream neighbours.
+
+        Parameters
+        ----------
+        priority:
+            Flow rule priority.  Higher-priority QoS sessions should
+            receive a higher value so their rules take precedence.
 
         Returns the list of newly installed flow rules.
         """
@@ -81,7 +88,7 @@ class FlowManager:
                 match=FlowMatch(multicast_group=session.multicast_group),
                 action=action,
                 output_ports=outputs,
-                priority=200,
+                priority=priority,
             )
             self.install_rule(rule)
             installed.append(rule)

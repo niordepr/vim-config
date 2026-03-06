@@ -1,4 +1,14 @@
-"""Data models for the satellite broadcast distribution SDN controller."""
+"""Data models for the satellite broadcast distribution SDN controller.
+
+Supports LEO/MEO/GEO constellations at various scales, multiple routing
+strategies, QoS priority levels, and inter-satellite link (ISL) types.
+References:
+
+* Walker, J.G. "Satellite constellations," *J. Br. Interplanet. Soc.*, 1984.
+* Handley, M. "Delay is Not an Option: Low Latency Routing in Space," *HotNets*, 2018.
+* Papa, A. et al. "Design and Evaluation of Reconfigurable Intelligent
+  Surface-Aided LEO Satellite Networks," *IEEE Trans. Commun.*, 2022.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +25,49 @@ class NodeType(enum.Enum):
     SATELLITE = "satellite"
     GROUND_STATION = "ground_station"
     GATEWAY = "gateway"
+
+
+class OrbitType(enum.Enum):
+    """Orbit classification for satellite nodes."""
+
+    LEO = "LEO"
+    MEO = "MEO"
+    GEO = "GEO"
+    HEO = "HEO"
+
+
+class ISLType(enum.Enum):
+    """Inter-satellite link type.
+
+    * INTRA_PLANE – link between adjacent satellites in the same orbital plane.
+    * INTER_PLANE – link between satellites in neighbouring orbital planes.
+    * GROUND_LINK – uplink / downlink between a satellite and a ground station.
+    """
+
+    INTRA_PLANE = "intra_plane"
+    INTER_PLANE = "inter_plane"
+    GROUND_LINK = "ground_link"
+
+
+class RoutingStrategy(enum.Enum):
+    """Available routing / tree-computation strategies."""
+
+    SHORTEST_PATH = "shortest_path"
+    MINIMUM_COST_TREE = "minimum_cost_tree"
+    MIN_LATENCY = "min_latency"
+    MAX_BANDWIDTH = "max_bandwidth"
+    LOAD_BALANCED = "load_balanced"
+    DELAY_BOUNDED = "delay_bounded"
+
+
+class QosPriority(enum.Enum):
+    """QoS priority levels for broadcast sessions."""
+
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    BEST_EFFORT = "best_effort"
 
 
 class LinkState(enum.Enum):
@@ -45,6 +98,11 @@ class Node:
         longitude: Geographic longitude in degrees.
         altitude_km: Altitude above sea level in kilometres.
         capacity_mbps: Maximum throughput capacity in Mbps.
+        orbit_type: Orbit classification (LEO / MEO / GEO / HEO).
+        orbital_plane: Orbital plane index (0-based) for constellation satellites.
+        orbital_index: Index within the orbital plane (0-based).
+        inclination_deg: Orbital inclination in degrees.
+        period_minutes: Orbital period in minutes.
         metadata: Arbitrary key/value metadata.
     """
 
@@ -55,6 +113,11 @@ class Node:
     longitude: float = 0.0
     altitude_km: float = 0.0
     capacity_mbps: float = 1000.0
+    orbit_type: Optional[OrbitType] = None
+    orbital_plane: Optional[int] = None
+    orbital_index: Optional[int] = None
+    inclination_deg: Optional[float] = None
+    period_minutes: Optional[float] = None
     metadata: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -66,6 +129,11 @@ class Node:
             "longitude": self.longitude,
             "altitude_km": self.altitude_km,
             "capacity_mbps": self.capacity_mbps,
+            "orbit_type": self.orbit_type.value if self.orbit_type else None,
+            "orbital_plane": self.orbital_plane,
+            "orbital_index": self.orbital_index,
+            "inclination_deg": self.inclination_deg,
+            "period_minutes": self.period_minutes,
             "metadata": self.metadata,
         }
 
@@ -74,6 +142,8 @@ class Node:
         data = dict(data)
         if "node_type" in data and isinstance(data["node_type"], str):
             data["node_type"] = NodeType(data["node_type"])
+        if "orbit_type" in data and isinstance(data["orbit_type"], str):
+            data["orbit_type"] = OrbitType(data["orbit_type"])
         return cls(**data)
 
 
@@ -89,6 +159,8 @@ class Link:
         latency_ms: One-way propagation delay in milliseconds.
         state: Operational state.
         cost: Routing cost metric (lower is better).
+        isl_type: Inter-satellite link type classification.
+        load: Current traffic load as a fraction in [0.0, 1.0].
     """
 
     link_id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -98,6 +170,8 @@ class Link:
     latency_ms: float = 250.0
     state: LinkState = LinkState.UP
     cost: float = 1.0
+    isl_type: Optional[ISLType] = None
+    load: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -108,6 +182,8 @@ class Link:
             "latency_ms": self.latency_ms,
             "state": self.state.value,
             "cost": self.cost,
+            "isl_type": self.isl_type.value if self.isl_type else None,
+            "load": self.load,
         }
 
     @classmethod
@@ -115,6 +191,8 @@ class Link:
         data = dict(data)
         if "state" in data and isinstance(data["state"], str):
             data["state"] = LinkState(data["state"])
+        if "isl_type" in data and isinstance(data["isl_type"], str):
+            data["isl_type"] = ISLType(data["isl_type"])
         return cls(**data)
 
 
@@ -213,6 +291,9 @@ class BroadcastSession:
         active: Whether the session is currently active.
         tree_links: Set of link IDs forming the distribution tree.
         flow_rule_ids: IDs of installed flow rules for this session.
+        qos_priority: QoS priority level.
+        routing_strategy: Routing strategy override (None = use controller default).
+        max_latency_ms: Maximum acceptable end-to-end latency (0 = unbounded).
     """
 
     session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -224,6 +305,9 @@ class BroadcastSession:
     active: bool = False
     tree_links: Set[str] = field(default_factory=set)
     flow_rule_ids: List[str] = field(default_factory=list)
+    qos_priority: QosPriority = QosPriority.MEDIUM
+    routing_strategy: Optional[RoutingStrategy] = None
+    max_latency_ms: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -236,6 +320,11 @@ class BroadcastSession:
             "active": self.active,
             "tree_links": sorted(self.tree_links),
             "flow_rule_ids": list(self.flow_rule_ids),
+            "qos_priority": self.qos_priority.value,
+            "routing_strategy": (
+                self.routing_strategy.value if self.routing_strategy else None
+            ),
+            "max_latency_ms": self.max_latency_ms,
         }
 
     @classmethod
@@ -245,4 +334,8 @@ class BroadcastSession:
             data["destination_node_ids"] = set(data["destination_node_ids"])
         if "tree_links" in data:
             data["tree_links"] = set(data["tree_links"])
+        if "qos_priority" in data and isinstance(data["qos_priority"], str):
+            data["qos_priority"] = QosPriority(data["qos_priority"])
+        if "routing_strategy" in data and isinstance(data["routing_strategy"], str):
+            data["routing_strategy"] = RoutingStrategy(data["routing_strategy"])
         return cls(**data)

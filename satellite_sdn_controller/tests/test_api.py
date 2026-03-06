@@ -34,6 +34,7 @@ class TestStatusEndpoint:
         assert resp.status_code == 200
         data = resp.get_json()
         assert "nodes" in data
+        assert "default_strategy" in data
 
 
 class TestNodeEndpoints:
@@ -156,6 +157,28 @@ class TestSessionEndpoints:
         resp = c.delete(f"/api/sessions/{sid}")
         assert resp.status_code == 200
 
+    def test_create_session_with_qos(self, client):
+        c, ctrl = client
+        _seed(ctrl)
+        resp = c.post(
+            "/api/sessions",
+            data=json.dumps({
+                "name": "Critical-TV",
+                "source_node_id": "gw",
+                "multicast_group": "239.2.2.2",
+                "destination_node_ids": ["gs1"],
+                "qos_priority": "critical",
+                "routing_strategy": "min_latency",
+                "max_latency_ms": 200.0,
+            }),
+            content_type="application/json",
+        )
+        assert resp.status_code == 201
+        data = resp.get_json()
+        assert data["qos_priority"] == "critical"
+        assert data["routing_strategy"] == "min_latency"
+        assert data["max_latency_ms"] == 200.0
+
 
 class TestFlowEndpoints:
     def test_list_flows(self, client):
@@ -184,3 +207,107 @@ class TestFlowEndpoints:
         ctrl.activate_session(session.session_id)
         resp = c.get("/api/flows/gw")
         assert resp.status_code == 200
+
+
+class TestConstellationEndpoints:
+    def test_list_presets(self, client):
+        c, _ = client
+        resp = c.get("/api/constellation/presets")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "iridium" in data
+        assert "small_leo" in data
+
+    def test_generate_from_preset(self, client):
+        c, _ = client
+        resp = c.post(
+            "/api/constellation/generate",
+            data=json.dumps({"preset": "small_leo"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 201
+        data = resp.get_json()
+        assert data["total_satellites"] == 24
+        assert data["nodes"] >= 24
+
+    def test_generate_unknown_preset(self, client):
+        c, _ = client
+        resp = c.post(
+            "/api/constellation/generate",
+            data=json.dumps({"preset": "unknown"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+    def test_generate_custom(self, client):
+        c, _ = client
+        resp = c.post(
+            "/api/constellation/generate",
+            data=json.dumps({
+                "name": "custom",
+                "num_planes": 2,
+                "sats_per_plane": 3,
+                "altitude_km": 500.0,
+                "inclination_deg": 45.0,
+            }),
+            content_type="application/json",
+        )
+        assert resp.status_code == 201
+        data = resp.get_json()
+        assert data["total_satellites"] == 6
+
+    def test_add_ground_station(self, client):
+        c, ctrl = client
+        ctrl.load_constellation("small_leo")
+        resp = c.post(
+            "/api/constellation/ground_stations",
+            data=json.dumps({
+                "station_id": "gs-test",
+                "name": "Test GS",
+                "latitude": 0.0,
+                "longitude": 0.0,
+            }),
+            content_type="application/json",
+        )
+        assert resp.status_code == 201
+        data = resp.get_json()
+        assert data["node_id"] == "gs-test"
+
+
+class TestStrategyEndpoints:
+    def test_get_strategy(self, client):
+        c, _ = client
+        resp = c.get("/api/strategy")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["default_strategy"] == "shortest_path"
+        assert "available" in data
+
+    def test_set_strategy(self, client):
+        c, _ = client
+        resp = c.put(
+            "/api/strategy",
+            data=json.dumps({"strategy": "min_latency"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["default_strategy"] == "min_latency"
+
+    def test_set_invalid_strategy(self, client):
+        c, _ = client
+        resp = c.put(
+            "/api/strategy",
+            data=json.dumps({"strategy": "bogus"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+
+class TestHandoverEndpoint:
+    def test_trigger_handover(self, client):
+        c, ctrl = client
+        ctrl.load_constellation("small_leo")
+        ctrl.add_ground_station("gs1", "GS-1", 0.0, 0.0, min_elevation_deg=10.0)
+        resp = c.post("/api/handover")
+        assert resp.status_code == 200
+        assert isinstance(resp.get_json(), dict)

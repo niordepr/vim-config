@@ -1,7 +1,16 @@
 """Tests for the main SDN controller."""
 
+import pytest
+
 from satellite_sdn_controller.controller import SatelliteSDNController
-from satellite_sdn_controller.models import Link, LinkState, Node, NodeType
+from satellite_sdn_controller.models import (
+    Link,
+    LinkState,
+    Node,
+    NodeType,
+    QosPriority,
+    RoutingStrategy,
+)
 
 
 def _build_controller():
@@ -142,3 +151,146 @@ class TestControllerStatus:
         assert status["sessions_total"] == 1
         assert status["sessions_active"] == 1
         assert status["flow_rules"] > 0
+
+
+class TestConstellationIntegration:
+    def test_load_preset(self):
+        ctrl = SatelliteSDNController()
+        config = ctrl.load_constellation("small_leo")
+        assert config.name == "small_leo"
+        assert ctrl.topology.node_count == 24  # 4 × 6
+
+    def test_load_unknown_preset_raises(self):
+        ctrl = SatelliteSDNController()
+        with pytest.raises(ValueError):
+            ctrl.load_constellation("unknown")
+
+    def test_add_ground_station_to_constellation(self):
+        ctrl = SatelliteSDNController()
+        ctrl.load_constellation("small_leo")
+        gs = ctrl.add_ground_station(
+            "gs-test", "GS-Test", 0.0, 0.0,
+            min_elevation_deg=10.0,
+        )
+        assert gs.node_type == NodeType.GROUND_STATION
+        assert ctrl.topology.get_node("gs-test") is not None
+
+    def test_constellation_broadcast_session(self):
+        """End-to-end: generate constellation, add GS, create and activate session."""
+        ctrl = SatelliteSDNController()
+        ctrl.load_constellation("small_leo")
+        ctrl.add_ground_station(
+            "gs1", "GS-1", 0.0, 0.0, min_elevation_deg=10.0
+        )
+        ctrl.add_ground_station(
+            "gs2", "GS-2", 35.0, 139.0, min_elevation_deg=10.0
+        )
+        session = ctrl.create_broadcast_session(
+            name="Broadcast-1",
+            source_node_id="gs1",
+            multicast_group="239.1.1.1",
+            destination_node_ids={"gs2"},
+        )
+        result = ctrl.activate_session(session.session_id)
+        assert result is True
+        session = ctrl.get_session(session.session_id)
+        assert session.active
+
+
+class TestRoutingStrategies:
+    def _build_latency_controller(self):
+        ctrl = SatelliteSDNController()
+        for nid in ("S", "A", "B", "D"):
+            ctrl.add_node(Node(node_id=nid, node_type=NodeType.SATELLITE))
+        ctrl.add_link(Link(
+            link_id="SA", source_id="S", target_id="A",
+            cost=1, latency_ms=100, bandwidth_mbps=50,
+        ))
+        ctrl.add_link(Link(
+            link_id="AD", source_id="A", target_id="D",
+            cost=1, latency_ms=100, bandwidth_mbps=50,
+        ))
+        ctrl.add_link(Link(
+            link_id="SB", source_id="S", target_id="B",
+            cost=5, latency_ms=10, bandwidth_mbps=200,
+        ))
+        ctrl.add_link(Link(
+            link_id="BD", source_id="B", target_id="D",
+            cost=5, latency_ms=10, bandwidth_mbps=200,
+        ))
+        return ctrl
+
+    def test_default_strategy(self):
+        ctrl = SatelliteSDNController(
+            default_strategy=RoutingStrategy.MIN_LATENCY,
+        )
+        assert ctrl.default_strategy == RoutingStrategy.MIN_LATENCY
+
+    def test_set_strategy(self):
+        ctrl = SatelliteSDNController()
+        ctrl.default_strategy = RoutingStrategy.LOAD_BALANCED
+        assert ctrl.default_strategy == RoutingStrategy.LOAD_BALANCED
+
+    def test_min_latency_session(self):
+        ctrl = self._build_latency_controller()
+        session = ctrl.create_broadcast_session(
+            name="Low-Latency",
+            source_node_id="S",
+            multicast_group="239.1.1.1",
+            destination_node_ids={"D"},
+            routing_strategy=RoutingStrategy.MIN_LATENCY,
+        )
+        ctrl.activate_session(session.session_id)
+        session = ctrl.get_session(session.session_id)
+        assert session.active
+        # Min latency path should go S-B-D
+        assert "SB" in session.tree_links
+        assert "BD" in session.tree_links
+
+    def test_qos_priority_affects_flow_priority(self):
+        ctrl = _build_controller()
+        session = ctrl.create_broadcast_session(
+            name="Critical",
+            source_node_id="gw",
+            multicast_group="239.1.1.1",
+            destination_node_ids={"gs1"},
+            qos_priority=QosPriority.CRITICAL,
+        )
+        ctrl.activate_session(session.session_id)
+        rules = ctrl.flow_manager.get_all_rules()
+        assert len(rules) > 0
+        # Critical sessions should have priority 500
+        assert all(r.priority == 500 for r in rules)
+
+    def test_delay_bounded_session(self):
+        ctrl = self._build_latency_controller()
+        session = ctrl.create_broadcast_session(
+            name="Bounded",
+            source_node_id="S",
+            multicast_group="239.1.1.1",
+            destination_node_ids={"D"},
+            routing_strategy=RoutingStrategy.DELAY_BOUNDED,
+            max_latency_ms=250.0,
+        )
+        result = ctrl.activate_session(session.session_id)
+        assert result is True
+
+
+class TestHandoverIntegration:
+    def test_trigger_handover(self):
+        ctrl = SatelliteSDNController()
+        ctrl.load_constellation("small_leo")
+        ctrl.add_ground_station(
+            "gs1", "GS-1", 0.0, 0.0, min_elevation_deg=10.0
+        )
+        results = ctrl.trigger_handover()
+        assert isinstance(results, dict)
+
+    def test_status_includes_constellation_info(self):
+        ctrl = SatelliteSDNController()
+        ctrl.load_constellation("small_leo")
+        status = ctrl.get_status()
+        assert "constellation" in status
+        assert status["constellation"]["name"] == "small_leo"
+        assert status["satellites"] == 24
+        assert status["default_strategy"] == "shortest_path"

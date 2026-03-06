@@ -7,10 +7,14 @@ from satellite_sdn_controller.models import (
     FlowAction,
     FlowMatch,
     FlowRule,
+    ISLType,
     Link,
     LinkState,
     Node,
     NodeType,
+    OrbitType,
+    QosPriority,
+    RoutingStrategy,
 )
 
 
@@ -20,6 +24,8 @@ class TestNode:
         assert node.node_type == NodeType.GROUND_STATION
         assert node.capacity_mbps == 1000.0
         assert node.node_id  # UUID should be generated
+        assert node.orbit_type is None
+        assert node.orbital_plane is None
 
     def test_to_dict_round_trip(self):
         node = Node(
@@ -39,12 +45,36 @@ class TestNode:
         assert restored.altitude_km == 35786.0
         assert restored.metadata == {"orbit": "GEO"}
 
+    def test_leo_satellite_round_trip(self):
+        node = Node(
+            node_id="sat-P0-S0",
+            name="Iridium-P0-S0",
+            node_type=NodeType.SATELLITE,
+            latitude=45.0,
+            longitude=120.0,
+            altitude_km=780.0,
+            orbit_type=OrbitType.LEO,
+            orbital_plane=0,
+            orbital_index=0,
+            inclination_deg=86.4,
+            period_minutes=100.4,
+        )
+        d = node.to_dict()
+        assert d["orbit_type"] == "LEO"
+        assert d["orbital_plane"] == 0
+        restored = Node.from_dict(d)
+        assert restored.orbit_type == OrbitType.LEO
+        assert restored.orbital_plane == 0
+        assert restored.inclination_deg == 86.4
+
 
 class TestLink:
     def test_defaults(self):
         link = Link()
         assert link.state == LinkState.UP
         assert link.cost == 1.0
+        assert link.isl_type is None
+        assert link.load == 0.0
 
     def test_round_trip(self):
         link = Link(
@@ -60,6 +90,21 @@ class TestLink:
         restored = Link.from_dict(d)
         assert restored.state == LinkState.DEGRADED
         assert restored.cost == 2.5
+
+    def test_isl_type_round_trip(self):
+        link = Link(
+            link_id="isl1",
+            source_id="a",
+            target_id="b",
+            isl_type=ISLType.INTRA_PLANE,
+            load=0.5,
+        )
+        d = link.to_dict()
+        assert d["isl_type"] == "intra_plane"
+        assert d["load"] == 0.5
+        restored = Link.from_dict(d)
+        assert restored.isl_type == ISLType.INTRA_PLANE
+        assert restored.load == 0.5
 
 
 class TestFlowRule:
@@ -96,3 +141,28 @@ class TestBroadcastSession:
         restored = BroadcastSession.from_dict(d)
         assert restored.destination_node_ids == {"gs1", "gs2"}
         assert restored.tree_links == {"l1", "l2"}
+
+    def test_qos_and_strategy_round_trip(self):
+        session = BroadcastSession(
+            session_id="s2",
+            name="TV-Critical",
+            source_node_id="sat1",
+            multicast_group="239.2.2.2",
+            destination_node_ids={"gs1"},
+            qos_priority=QosPriority.CRITICAL,
+            routing_strategy=RoutingStrategy.MIN_LATENCY,
+            max_latency_ms=100.0,
+        )
+        d = session.to_dict()
+        assert d["qos_priority"] == "critical"
+        assert d["routing_strategy"] == "min_latency"
+        assert d["max_latency_ms"] == 100.0
+        restored = BroadcastSession.from_dict(d)
+        assert restored.qos_priority == QosPriority.CRITICAL
+        assert restored.routing_strategy == RoutingStrategy.MIN_LATENCY
+
+    def test_default_qos_and_strategy(self):
+        session = BroadcastSession()
+        assert session.qos_priority == QosPriority.MEDIUM
+        assert session.routing_strategy is None
+        assert session.max_latency_ms == 0.0
