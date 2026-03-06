@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: satellite-sdn-controller
+  labels:
+    app: satellite-sdn-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: satellite-sdn-controller
+  template:
+    metadata:
+      labels:
+        app: satellite-sdn-controller
+    spec:
+      containers:
+        - name: sdn-controller
+          image: satellite-sdn-controller:latest
+          ports:
+            - containerPort: 8081
+              name: http
+          envFrom:
+            - configMapRef:
+                name: satellite-sdn-config
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
